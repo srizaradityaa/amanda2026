@@ -144,6 +144,7 @@ export const templateKuitansi: TemplateKuitansi = {
   nama_instansi: 'Pemerintah Daerah Contoh',
   judul_dokumen: 'KUITANSI',
   tempat_penerima: 'Contoh Kota',
+  berkas_doc: null,
 };
 
 // ===== Workspace TA (snapshot operasional terisolasi) — D04 §2.2 =====

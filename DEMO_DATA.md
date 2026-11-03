@@ -160,32 +160,61 @@ Catatan Langkah 4 Bagian 2B (lanjutan): TA 2026 memiliki versi pagu murni (13 ba
 
 ## Langkah 5A: Template, Kuitansi & SPJ (Tahap A, frontend dengan data contoh)
 
-Cara mencoba: masuk sebagai Admin (`admin` / `amanda123`). Menu baru di panel Admin: **Form Builder** dan **Visual Live Editor**.
+Cara mencoba: masuk sebagai Admin (`admin` / `amanda123`). Menu di panel Admin: **Form Dinamis** dan **Template Kuitansi**.
 
-Data contoh form Dinamis sudah tersedia:
-- **Belanja Perjalanan Dinas** (v1): 23 field utama + blok berulang "Pelaku Perjalanan" dengan tag `[SYS_PERSONNEL_ID]` dan `[SYS_PERSONNEL_NAME]`. Tag `[SYS_START_DATE]` dan `[SYS_END_DATE]` pada field tanggal utama.
-- **Belanja Barang Habis Pakai** (v1): 9 field, tanpa blok berulang.
-- **Belanja Jasa Konsultan** (v1): 5 field, tanpa blok berulang.
+Data contoh Form Dinamis sudah tersedia:
+- **Belanja Perjalanan Dinas** (v1): 8 field utama (Uraian, Seksi, Nomor SPT, Tanggal SPT, Daerah Tujuan, Tanggal Berangkat `[SYS_START_DATE]`, Tanggal Kembali `[SYS_END_DATE]`, Uang Harian) + blok berulang "Pelaku" dengan 3 field (NIP/NIK `[SYS_PERSONNEL_ID]`, Nama `[SYS_PERSONNEL_NAME]`, Golongan Pangkat).
+- **Belanja Barang Habis Pakai** (v1): 2 field (Uraian, Jumlah Item), tanpa blok berulang.
+- **Belanja Jasa Konsultan** (v1): 4 field (Uraian, Nama Konsultan, NIP/NIK Konsultan `[SYS_PERSONNEL_ID]`, Nama Kontak `[SYS_PERSONNEL_NAME]`), tanpa blok berulang.
 
 Direktori Transaksional SPJ (untuk auto-fill pratinjau):
 - NIP `198807202012011004` → Budi Santoso, S.T.
 - NIP `3210014503900001` → Nina Marlina
 - NIP `6701234590123456` → Ahmad Narasumber, S.E.
 
+Mock data bentrok (terisolasi, hanya di pratinjau, I-64e):
+- NIP `198807202012011004` terjadwal 2026-11-10 s.d. 2026-11-12
+- NIP `3210014503900001` terjadwal 2026-11-15 s.d. 2026-11-15
+
 Skenario uji:
 
-32. **Daftar form (TPL-02).** Admin membuka menu **Form Builder**. Tiga form aktif tampil: Belanja Perjalanan Dinas, Belanja Barang Habis Pakai, Belanja Jasa Konsultan. Kolom menampilkan versi, jumlah field, blok berulang, dan tag sistem.
-33. **Buat form baru (TPL-02).** Klik "Form Baru", isi jenis belanja (mis. "Belanja Honorarium"), tambah field dengan label, tipe, wajib/opsional, urutan. Simpan. Form baru tampil di daftar.
-34. **Edit form = versi baru (TPL-02, I-64).** Klik ikon edit pada form yang sudah ada. Ubah/m tambah/hapus field. Simpan. Form lama di-nonaktifkan, versi baru tampil di daftar. Buka riwayat (ikon History) untuk melihat semua versi.
-35. **Maksimal satu blok berulang (I-58).** Saat mengedit form, aktifkan blok berulang, lalu coba tambah blok kedua: hanya ada satu tombol "Tambah Blok Berulang" yang toggle aktif/nonaktif. Tidak bisa menambah blok kedua.
-36. **Tag sistem berpasangan (BNT-02, M-89).** Saat mengedit form, klik tombol "Tag Sistem" untuk menampilkan kolom tag. Pasang `[SYS_PERSONNEL_ID]` tanpa `[SYS_PERSONNEL_NAME]` di konteks yang sama: sistem menolak penyimpanan dengan pesan "harus berpasangan". Tag dapat dipasang di field utama atau di baris blok berulang.
-37. **Template kuitansi (TPL-01).** Admin membuka menu **Visual Live Editor**. Tab "Konfigurasi Editor" menampilkan daftar template. Klik "Template Baru" atau ikon edit untuk mengelola bagian template. Preview cetak tampil di bagian bawah modal.
-38. **Unggah .doc/.docx (TPL-01).** Di modal template, unggah file .doc atau .docx. File non-.doc ditolak. Nama file tampil di daftar template.
-39. **Pratinjau Langsung (TPL-03, I-64a).** Buka tab "Pratinjau Langsung" di Visual Live Editor. Pilih form. Pratinjau tampil di halaman yang sama (bukan pop-up). Beralih ke tab "Konfigurasi Editor" dan kembali: draf isian tetap ada.
-40. **Field wajib di pratinjau (I-64b).** Di tab Pratinjau Langsung, kosongkan field wajib, lalu tekan "Simulasi Ajukan". Sistem menampilkan peringatan field wajib kosong dan simulasi ditolak. Isi field opsional dikosongkan tetap diterima.
-41. **Tombol "+ Tambah" blok berulang (I-64c).** Di pratinjau form dengan blok berulang, tekan "+ Tambah". Entri baru muncul dengan field yang sama dengan entri pertama. Hapus entri dengan ikon tempat sampah.
-42. **Auto-fill NIP/NIK (I-64d).** Di pratinjau, masukkan NIP `198807202012011004` pada field bertag `[SYS_PERSONNEL_ID]`. Nama "Budi Santoso, S.T." terisi otomatis. Masukkan NIP yang tidak terdaftar: nama tetap kosong, diisi manual. Tidak ada entri Jejak Audit yang ditambahkan.
-43. **Cek bentrok mock (I-64e).** Di pratinjau dengan blok berulang, masukkan NIP/NIK yang sama di dua entri blok. Tekan "Simulasi Ajukan". Sistem menampilkan bentrok terdeteksi (mock data terisolasi). Tidak membaca SPJ asli.
-44. **Pratinjau hanya memori (I-64f).** Setelah pratinjau, muat ulang halaman. Semua isian pratinjau hilang. Tidak ada kuitansi, SPJ, BKU, atau entri Jejak Audit yang tersimpan.
-45. **Akses hanya Admin (I-64g).** Menu "Visual Live Editor" dan "Form Builder" hanya tampil untuk Admin. Masuk sebagai Bendahara, PPTK, Verifikator, PA/KPA, atau Pengawas: menu tidak tampil.
+32. **Daftar form (TPL-02).** Admin membuka menu **Form Dinamis**. Tiga jenis belanja tampil di panel kiri: Belanja Perjalanan Dinas, Belanja Barang Habis Pakai, Belanja Jasa Konsultan. Klik salah satu untuk melihat field di tabel. Kolom menampilkan label, tipe, wajib/opsional, dan tag sistem.
+33. **Buat form baru (TPL-02).** Isi "Jenis belanja baru" (mis. "Belanja Honoratorium") di panel kiri, klik tombol +. Tambah field dengan tombol "Field" di kanan atas: isi label, pilih tipe, centang wajib/opsional, pilih tag sistem bila perlu. Klik "Simpan Versi Baru". Toast "Tersimpan" muncul. Form baru tampil di daftar kiri.
+34. **Edit form = versi baru (TPL-02, I-64).** Buka form yang sudah ada, ubah/tambah/hapus field, lalu "Simpan Versi Baru". Versi bertambah (mis. v1 → v2). Form lama tetap ada di data; `repo.formTerbaru()` mengembalikan versi terbaru.
+35. **Maksimal satu blok berulang (I-58).** Saat mengedit form, klik "Blok Berulang" untuk menambah blok. Tombol hilang setelah blok dibuat — tidak bisa menambah blok kedua. Beri nama blok dan tambah field ke dalamnya. Hapus blok dengan tombol "Hapus blok" untuk membuat ulang.
+36. **Tag sistem berpasangan (BNT-02, M-89).** Saat menambah field, pilih tag sistem dari dropdown. Pasang `[SYS_PERSONNEL_ID]` tanpa `[SYS_PERSONNEL_NAME]` di konteks yang sama (field utama atau blok), lalu simpan: sistem menolak dengan pesan "harus dipasangkan". Tag dapat dipasang di field utama atau di field dalam blok berulang. `[SYS_START_DATE]` dan `[SYS_END_DATE]` dapat berdiri sendiri.
+37. **Template kuitansi (TPL-01).** Admin membuka menu **Template Kuitansi**. Panel kiri "Konfigurasi Editor" menampilkan isian nama instansi, judul dokumen, dan tempat penerima. Preview cetak tampil di panel kanan dengan contoh data. Klik "Simpan Template" → toast "Tersimpan".
+38. **Unggah .doc/.docx (TPL-01).** Di panel kiri Template Kuitansi, bagian "Alternatif: unggah template .doc/.docx", klik "Pilih file .doc / .docx". Pilih file .doc atau .docx: nama file tampil dengan ikon dokumen. Coba unggah file .pdf atau .txt: ditolak dengan pesan format tidak didukung. Hapus berkas dengan ikon X. Simpan template untuk menyimpan nama berkas.
+39. **Pratinjau Langsung (TPL-03, I-64a).** Buka menu **Form Dinamis**, pilih form "Belanja Perjalanan Dinas", lalu klik tab "Pratinjau Langsung" di kanan atas. Pratinjau tampil di halaman yang sama (bukan pop-up). Beralih ke tab "Konfigurasi Editor" dan kembali: draf isian tetap ada (state React tidak direset).
+40. **Field wajib di pratinjau (I-64b).** Di tab Pratinjau Langsung, kosongkan field wajib (ditandai *), lalu tekan "Simulasi Ajukan". Sistem menampilkan peringatan "Wajib diisi: ..." dan simulasi ditolak. Isi field opsional dikosongkan tetap diterima.
+41. **Tombol "+ Tambah" blok berulang (I-64c).** Di pratinjau form "Belanja Perjalanan Dinas" (yang punya blok "Pelaku"), tekan "+ Tambah". Entri baru muncul dengan field yang sama (NIP/NIK, Nama, Golongan Pangkat). Hapus entri (kecuali entri terakhir) dengan ikon tempat sampah di pojok kanan setiap entri.
+42. **Auto-fill NIP/NIK (I-64d).** Di pratinjau blok "Pelaku", masukkan NIP `198807202012011004` pada field NIP/NIK. Nama "Budi Santoso, S.T." terisi otomatis di field Nama. Masukkan NIP yang tidak terdaftar (mis. `9999999999999999`): nama tetap kosong, diisi manual. Tidak ada entri Jejak Audit yang ditambahkan (periksa menu Jejak Audit sebelum dan sesudah).
+43. **Cek bentrok mock (I-64e).** Di pratinjau "Belanja Perjalanan Dinas", isi Tanggal Berangkat `2026-11-10` dan Tanggal Kembali `2026-11-12` di field utama. Tambah dua entri blok: entri 1 dengan NIP `198807202012011004`, entri 2 dengan NIP yang sama. Tekan "Simulasi Ajukan". Sistem menampilkan bentrok: "Bentrok jadwal: NIP/NIK 198807202012011004 pada 2026-11-10–2026-11-12". Mock data terisolasi — tidak membaca SPJ asli.
+44. **Pratinjau hanya memori (I-64f).** Setelah pratinjau, muat ulang halaman. Semua isian pratinjau hilang. Tidak ada kuitansi, SPJ, BKU, atau entri Jejak Audit yang tersimpan (periksa menu Jejak Audit dan data contoh tidak berubah).
+45. **Akses hanya Admin (I-64g).** Menu "Form Dinamis" dan "Template Kuitansi" hanya tampil untuk Admin. Masuk sebagai Bendahara, PPTK, Verifikator, PA/KPA, atau Pengawas: menu tidak tampil di navigasi.
+
+### Status Langkah 5A (dibangun dan diperiksa lewat kode; belum diuji di browser)
+
+| ID | Status | Keterangan |
+|---|---|---|
+| TPL-02 | Terbukti di kode | `FormBuilderPage.tsx`: daftar jenis belanja, tambah field (modal), urutan (naik/turun), wajib/opsional, tipe, tag sistem, blok berulang (maks 1), simpan versi baru. `repo.simpanVersiForm`: validasi tag (`validasiTagSistem`), minimum 1 field, nama blok wajib. |
+| TPL-01 | Terbukti di kode | `TemplateKuitansiPage.tsx`: konfigurasi editor (nama instansi, judul, tempat), preview cetak F4, unggah .doc/.docx (validasi ekstensi + MIME), hapus berkas, simpan. `repo.simpanTemplateKuitansi`: validasi nama instansi + judul. |
+| BNT-02 | Terbukti di kode | `formDinamis.ts` `validasiTagSistem`: cek duplikat tag per konteks, cek pasangan ID/nama. `repo.simpanVersiForm` memanggil validasi sebelum menyimpan. Tag dapat di field utama atau blok. |
+| TPL-03 | Terbukti di kode | `FormPreviewTab.tsx`: tab berdampingan "Konfigurasi Editor" / "Pratinjau Langsung" di `FormBuilderPage`, field wajib/opsional, blok berulang "+ Tambah", hapus entri, auto-fill NIP/NIK dari `repo.direktoriTransaksional()`, mock bentrok (`MOCK_SPJ_BENTROK`), simulasi ajukan, hanya memori (useState). |
+
+### Skenario Dokumen 05 bagian 4
+
+| Skenario | Status | Keterangan |
+|---|---|---|
+| H-55 | Terbukti di kode | Field wajib ditolak kosong di `simulasiAjukan`. Tidak ada validasi matematis terhadap bruto. |
+| I-58 | Terbukti di kode | Tombol "Blok Berulang" hilang setelah blok dibuat; tidak bisa tambah blok kedua. |
+| I-64 | Terbukti di kode | `simpanVersiForm` membuat versi baru; form lama tetap di `data.formDinamis`. |
+| I-64a | Terbukti di kode | Tab di `FormBuilderPage` state `tab`; beralih tidak reset `draft`. |
+| I-64b | Terbukti di kode | `simulasiAjukan` mengumpulkan field wajib kosong; tampilkan peringatan. |
+| I-64c | Terbukti di kode | Tombol "+ Tambah" menambah entri; ikon tempat sampah hapus entri (kecuali terakhir). |
+| I-64d | Terbukti di kode | `set()` mencari `repo.direktoriTransaksional()` saat tag `[SYS_PERSONNEL_ID]`; tidak menambah audit. |
+| I-64e | Terbukti di kode | `MOCK_SPJ_BENTROK` terisolasi; `rentangOverlap` cek inklusif. Tidak membaca `data.spj`. |
+| I-64f | Terbukti di kode | Semua state `useState` di `FormPreviewTab`; tidak ada persistensi. |
+| I-64g | Terbukti di kode | `buildNav` di `App.tsx`: menu Form Dinamis & Template Kuitansi hanya di `role === 'admin'`. |
+| M-89 | Terbukti di kode | `validasiTagSistem` menolak ID tanpa nama (atau sebaliknya) dalam konteks yang sama. |
 

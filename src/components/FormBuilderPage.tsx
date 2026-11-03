@@ -77,7 +77,7 @@ export function FormBuilderPage() {
           <div className="flex w-fit gap-1 rounded-md bg-ink-raised p-1">
             {(['konfigurasi', 'pratinjau'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`rounded px-3 py-1.5 text-2xs transition-colors ${tab === t ? 'bg-ink-edge text-mist' : 'text-mist-dim hover:text-mist'}`}>
-                {t === 'konfigurasi' ? 'Konfigurasi' : 'Pratinjau Langsung'}
+                {t === 'konfigurasi' ? 'Konfigurasi Editor' : 'Pratinjau Langsung'}
               </button>
             ))}
           </div>

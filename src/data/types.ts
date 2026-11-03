@@ -144,6 +144,7 @@ export interface TemplateKuitansi {
   nama_instansi: string;
   judul_dokumen: string;
   tempat_penerima: string;
+  berkas_doc: string | null; // nama berkas .doc/.docx unggahan alternatif (D02 §2.3)
 }
 
 // ===== Snapshot/Operasional TA (D04 §2.2) =====
