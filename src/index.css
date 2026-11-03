@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #0b1120;
+  color: #e5e7eb;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Angka tabular untuk kolom angka sejajar (Dokumen 03 §1 — angka nominal) */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Monospace untuk NIP/NIK, kode TA, nomor BKU, kode rekening */
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Cincin fokus amber 2px (Dokumen 03 §1 — keterbacaan) */
+:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+/* Pengurangan gerak (Dokumen 03 §1 — transisi dimatikan bila prefer-reduced-motion) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Scrollbar tipis untuk tema gelap */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1f2937 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #1f2937;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Garis kisi mikro statis (ornamen panel kiri login — Dokumen 03 §1) */
+.grid-ornament {
+  background-image:
+    linear-gradient(to right, rgba(31, 41, 55, 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(31, 41, 55, 0.5) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Mode standar: baris 48px. Pro Mode (layar 768px ke atas, hanya dasbor utama): baris 32px (Dokumen 03 §1) */
+.pro-row {
+  height: 3rem;
+}
+
+@media (min-width: 768px) {
+  .pro-dashboard .pro-row {
+    height: 2rem;
+  }
+}
+
+/* Mode Standar: tabel baris ~48px (Dokumen 03 §1) */
+.std-row {
+  height: 3rem; /* 48px */
+}
+
+/* Hilangkan spin button pada input nominal (Dokumen 04 §4) */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
