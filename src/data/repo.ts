@@ -145,31 +145,48 @@ function _cekWajib(form: FormDinamis, jawaban: Record<string, string | string[] 
 
 // D01 §11 / D03 §10: identitas perjalanan dinas (NIP/NIK + rentang tanggal efektif) dari jawaban SPJ
 type IdentitasJadwal = { nip: string; mulai: string; selesai: string };
-function _identitasJadwal(form: FormDinamis, jawaban: SPJ['jawaban']): IdentitasJadwal[] {
+type HasilJadwal = { daftar: IdentitasJadwal[]; error: string | null };
+function _identitasJadwal(form: FormDinamis, jawaban: SPJ['jawaban']): HasilJadwal {
   const cari = (fields: FieldFormDinamis[], tag: string) => fields.find((f) => f.system_tag === tag);
   const ambil = (src: Record<string, unknown>, f: FieldFormDinamis | undefined) => (f ? String(src[f.id] ?? '').trim() : '');
   const mulaiUtama = ambil(jawaban, cari(form.fields, '[SYS_START_DATE]'));
   const selesaiUtama = ambil(jawaban, cari(form.fields, '[SYS_END_DATE]'));
-  const out: IdentitasJadwal[] = [];
+  const daftar: IdentitasJadwal[] = [];
+  let error: string | null = null;
   const tambah = (nip: string, mulai: string, selesai: string) => {
-    if (nip && mulai) out.push({ nip, mulai, selesai: selesai || mulai });
+    if (!nip) return;
+    if (!mulai) {
+      if (!error) error = `Tanggal mulai tugas wajib diisi untuk NIP/NIK ${nip}.`;
+      return;
+    }
+    const selesaiEfektif = selesai || mulai;
+    if (selesaiEfektif < mulai) {
+      if (!error) error = `Tanggal selesai tugas untuk NIP/NIK ${nip} tidak boleh sebelum tanggal mulai.`;
+      return;
+    }
+    daftar.push({ nip, mulai, selesai: selesaiEfektif });
   };
   tambah(ambil(jawaban, cari(form.fields, '[SYS_PERSONNEL_ID]')), mulaiUtama, selesaiUtama);
   if (form.blok_berulang) {
     const bf = form.blok_berulang.fields;
+    const tagMulai = cari(bf, '[SYS_START_DATE]');
+    const tagSelesai = cari(bf, '[SYS_END_DATE]');
     const rows = jawaban[form.blok_berulang.id];
     if (Array.isArray(rows)) {
       for (const row of rows) {
         if (typeof row !== 'object') continue;
-        tambah(
-          ambil(row, cari(bf, '[SYS_PERSONNEL_ID]')),
-          ambil(row, cari(bf, '[SYS_START_DATE]')) || mulaiUtama,
-          ambil(row, cari(bf, '[SYS_END_DATE]')) || selesaiUtama,
-        );
+        const nip = ambil(row, cari(bf, '[SYS_PERSONNEL_ID]'));
+        const mulaiBlok = ambil(row, tagMulai);
+        const selesaiBlok = ambil(row, tagSelesai);
+        if (nip && ((tagMulai && !mulaiBlok) || (tagSelesai && !selesaiBlok))) {
+          if (!error) error = `Tanggal tugas pada blok untuk NIP/NIK ${nip} wajib diisi.`;
+          continue;
+        }
+        tambah(nip, mulaiBlok || mulaiUtama, selesaiBlok || selesaiUtama);
       }
     }
   }
-  return out;
+  return { daftar, error };
 }
 
 // TA-01 — transisi status TA yang diizinkan (Dokumen 02 / PAKET Langkah 3)
@@ -1006,13 +1023,15 @@ export const repo = {
       const errWajib = _cekWajib(form, spj.jawaban);
       if (errWajib) return { ok: false, error: errWajib };
     }
-    const milikSaya = form ? _identitasJadwal(form, spj.jawaban) : [];
+    const jadwal = form ? _identitasJadwal(form, spj.jawaban) : { daftar: [], error: null };
+    if (jadwal.error) return { ok: false, error: jadwal.error };
+    const milikSaya = jadwal.daftar;
     for (const lain of data.spj) {
       if (lain.id === spj.id || lain.ta_id !== spj.ta_id || lain.status === 'Draft') continue;
       const formLain = _getFormByVersion(lain.jenis_belanja, lain.versi_form);
       if (!formLain) continue;
       for (const a of milikSaya) {
-        for (const b of _identitasJadwal(formLain, lain.jawaban)) {
+        for (const b of _identitasJadwal(formLain, lain.jawaban).daftar) {
           if (a.nip === b.nip && a.mulai <= b.selesai && a.selesai >= b.mulai) {
             return { ok: false, error: `Bentrok jadwal: NIP/NIK ${a.nip} sudah tercatat pada SPJ lain di TA ini untuk tanggal ${b.mulai} s.d. ${b.selesai}. SPJ tetap Draft.` };
           }

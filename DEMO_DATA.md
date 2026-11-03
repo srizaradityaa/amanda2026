@@ -246,7 +246,10 @@ Skenario uji:
 51. **Buat SPJ 1:1 (SPJ-01, F-30).** Pilih kuitansi Aktif yang belum punya SPJ dan jenis belanja. Kuitansi langsung Terkunci. Kuitansi yang sudah punya SPJ tidak muncul lagi di pilihan. Tombol "Buat SPJ" nonaktif bila gatekeeper tertutup (C-17b).
 52. **Isi Form Dinamis SPJ (SPJ-04, H-57, I-59 s.d. I-61).** Buka SPJ Draft (mis. spj-2 atau SPJ baru jenis "Belanja Perjalanan Dinas"). Isi field. Blok "Pelaku" minimal satu entri, tambah dengan "+ Tambah". Field wajib kosong menolak pengajuan.
 53. **Auto-fill NIP/NIK (BNT-04, M-90).** Pada blok Pelaku, masukkan NIP `198807202012011004`. Nama terisi otomatis. NIP baru: nama diisi manual, lalu tersimpan ke Direktori saat Simpan Draft atau Ajukan. Penghapusan SPJ tidak menghapus entri direktori.
-54. **Ajukan dan bentrok jadwal (SPJ-02, M-96, D01 §11).** Dua SPJ dalam TA yang sama dengan NIP yang sama dan rentang tanggal beririsan: pengajuan kedua ditolak dengan pesan "Bentrok jadwal" dan SPJ tetap Draft. Draft lain tidak menjadi penghalang.
+54. **Ajukan dan bentrok jadwal (SPJ-02, M-96, D01 §11).** Dua SPJ dalam TA yang sama dengan NIP yang sama dan rentang tanggal beririsan: pengajuan kedua ditolak dengan pesan "Bentrok jadwal" dan SPJ tetap Draft. Draft lain dan SPJ yang dikembalikan untuk perbaikan tidak menjadi penghalang. Pembanding hanya SPJ Terkunci, Menunggu BKU, atau Dibukukan.
+54a. **Tanggal tugas wajib (D01 §11, butir 4 keputusan pemilik).** Pada blok berulang yang memiliki tag tanggal, entri dengan NIP wajib memiliki tanggal mulai dan tanggal selesai. Jika kosong, pengajuan ditolak dengan pesan "Tanggal tugas pada blok untuk NIP/NIK ... wajib diisi". Tanggal selesai sebelum tanggal mulai ditolak. Ini menyimpang dari default dokumen (selesai kosong sama dengan mulai) untuk baris blok.
+54b. **Simpan Draft pada Masa Transisi ditolak (keputusan pemilik).** Pada TA Masa Transisi, server menolak simpan jawaban SPJ dengan pesan "Jawaban SPJ hanya dapat diubah pada TA Aktif Penuh".
+54c. **Lepas SPJ Draft pada Masa Transisi diizinkan (keputusan pemilik).** Pada TA Masa Transisi, SPJ Draft dapat dilepas; kuitansi terkait kembali Aktif (hanya dibatalkan, tidak diedit).
 55. **Kembalikan dan setujui (SPJ-02, F-31).** Verifikator dapat mengembalikan SPJ Terkunci dengan catatan wajib. SPJ kembali Draft, kuitansi tetap Terkunci. Setujui mengubah SPJ menjadi Menunggu BKU.
 56. **Lepas dan batalkan SPJ Draft (SPJ-03, F-30c).** Tombol lepas dan batal pada SPJ Draft. Kuitansi terkait kembali Aktif tanpa jejak. SPJ Terkunci tidak dapat dilepas.
 57. **Filter daftar (R-145).** Daftar kuitansi memfilter periode, rekening, dan pencarian. Daftar SPJ memfilter status dan jenis belanja.
@@ -281,6 +284,6 @@ Skenario uji:
 
 ### Catatan
 
-- Aturan Masa Transisi untuk SPJ Draft (edit isi, lepas, batal) belum tertulis eksplisit di dokumen. Diterapkan: isi SPJ hanya diubah pada Aktif Penuh; lepas dan pengajuan mengikuti izin aksi SPJ (Aktif Penuh atau Masa Transisi).
+- Keputusan pemilik: simpan draft SPJ ditolak pada Masa Transisi; lepas SPJ Draft diizinkan pada Masa Transisi; tanggal tugas pada blok wajib diisi (selesai tidak boleh kosong untuk baris blok).
 - Belum diuji di peramban. Skenario 46 s.d. 57 perlu dijalankan manual.
 
