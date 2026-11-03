@@ -12,14 +12,135 @@ import type {
   DirektoriTransaksionalSPJ, AccountStatus, TAStatus,
   FormDinamis, FieldFormDinamis, BlokBerulangFormDinamis, TemplateKuitansi,
 } from '@/data/types';
-import { selisihHari, tambahHari, todayWita } from '@/lib/wita';
+import { selisihHari, tambahHari, todayWita, nowWita } from '@/lib/wita';
 import { validasiTagSistem, versiBerikutnya } from '@/lib/formDinamis';
+import { recordAudit, purgeAuditForKuitansi, purgeAuditForSPJ } from '@/lib/audit';
+import { gerbangStatus, sisaSpdBebas, komitmenAlokasi } from '@/data/anggaran';
+import type { SessionPayload, StatusKuitansi, StatusSPJ } from '@/data/types';
 
 // Helper: remove items matching predicate from a namespace-imported array (in-place).
 function removeAll<T>(arr: T[], pred: (x: T) => boolean): void {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (pred(arr[i])) arr.splice(i, 1);
   }
+}
+
+function formatRupiahLocal(n: number): string {
+  return 'Rp ' + Math.trunc(Math.abs(n)).toLocaleString('de-DE');
+}
+
+// B-10f: Cek apakah session PPTK adalah pejabat definitif yang aktif (bukan digantikan delegasi)
+function _isDefinitifAktifForSeksi(session: SessionPayload, seksi_ta_id: string): boolean {
+  const ta_id = session.active_ta_id;
+  if (!ta_id) return false;
+  // Cari penugasan definitif untuk personel ini pada seksi+TA
+  const acc = data.akunLogin.find((a) => a.id === session.user_id);
+  if (!acc || !acc.personel_id) return false;
+  const tgs = data.penugasanTA.find(
+    (t) => t.ta_id === ta_id && t.personel_id === acc.personel_id && t.peran === 'pptk' && t.seksi_ta_id === seksi_ta_id && t.tmt_selesai === null,
+  );
+  if (!tgs) return false; // bukan definitif
+  // Cek apakah ada delegasi aktif yang menggantikan pejabat definitif ini
+  const dels = data.penugasanDelegasi.filter(
+    (d) => d.ta_id === ta_id && d.status === 'Delegasi Aktif' && d.peran_digantikan === 'pptk' && d.seksi_ta_id === seksi_ta_id && d.definitive_officer_id === acc.personel_id,
+  );
+  // Jika ada delegasi aktif yang menggantikan pejabat ini, hak transaksi definitif nonaktif
+  // TAPI: jika session user_id adalah akun dari delegasi pengganti, dia boleh transaksi
+  // Jika session user_id adalah akun dari definitif yang digantikan, nonaktif
+  if (dels.length > 0) {
+    // Cek apakah session ini adalah delegasi pengganti (Plh.) atau definitif
+    const isDelegasiPengganti = dels.some((d) => d.personel_pengganti_id === acc.personel_id);
+    if (isDelegasiPengganti) return true; // Plh. PPTK boleh transaksi
+    return false; // definitif digantikan, nonaktif
+  }
+  return true;
+}
+
+// F-33d/e: Snapshot penandatangan dari penugasan aktif
+function _snapshotPenandatangan(ta_id: string, seksi_ta_id: string): {
+  pa_kpa_nama: string; pa_kpa_nip: string;
+  bendahara_nama: string; bendahara_nip: string;
+  pptk_nama: string; pptk_nip: string;
+} {
+  const tgs = data.penugasanTA.filter((t) => t.ta_id === ta_id && t.tmt_selesai === null);
+  const pa = tgs.find((t) => t.peran === 'pa_kpa');
+  const bend = tgs.find((t) => t.peran === 'bendahara');
+  // PPTK: cari definitif atau delegasi aktif untuk seksi ini
+  let pptkNama = '—', pptkNip = '—';
+  const pptkDef = tgs.find((t) => t.peran === 'pptk' && t.seksi_ta_id === seksi_ta_id);
+  if (pptkDef) {
+    // Cek apakah ada delegasi aktif yang menggantikan
+    const dels = data.penugasanDelegasi.filter(
+      (d) => d.ta_id === ta_id && d.status === 'Delegasi Aktif' && d.peran_digantikan === 'pptk' && d.seksi_ta_id === seksi_ta_id && d.definitive_officer_id === pptkDef.personel_id,
+    );
+    if (dels.length > 0) {
+      // Gunakan snapshot delegasi (Plh.)
+      pptkNama = `Plh. ${dels[0].nama_snapshot}`;
+      pptkNip = dels[0].nip_snapshot;
+    } else {
+      pptkNama = pptkDef.nama_snapshot;
+      pptkNip = pptkDef.nip_snapshot;
+    }
+  }
+  // Bendahara: cek delegasi juga
+  let bendNama = '—', bendNip = '—';
+  if (bend) {
+    const bendDels = data.penugasanDelegasi.filter(
+      (d) => d.ta_id === ta_id && d.status === 'Delegasi Aktif' && d.peran_digantikan === 'bendahara' && d.definitive_officer_id === bend.personel_id,
+    );
+    if (bendDels.length > 0) {
+      bendNama = `Plh. ${bendDels[0].nama_snapshot}`;
+      bendNip = bendDels[0].nip_snapshot;
+    } else {
+      bendNama = bend.nama_snapshot;
+      bendNip = bend.nip_snapshot;
+    }
+  }
+  return {
+    pa_kpa_nama: pa?.nama_snapshot ?? '—', pa_kpa_nip: pa?.nip_snapshot ?? '—',
+    bendahara_nama: bendNama, bendahara_nip: bendNip,
+    pptk_nama: pptkNama, pptk_nip: pptkNip,
+  };
+}
+
+// E-26: ID versi alokasi terbaru
+function _versiAlokasiTerbaru(ta_id: string): string | null {
+  const versi = data.versiAlokasiAnggaran.filter((v) => v.ta_id === ta_id);
+  if (versi.length === 0) return null;
+  return versi[versi.length - 1].id;
+}
+
+// I-64: Ambil form by versi
+function _getFormByVersion(jenis_belanja: string, versi: string) {
+  return data.formDinamis.find((f) => f.jenis_belanja === jenis_belanja && f.versi === versi);
+}
+
+// SPJ-04: Cek field wajib terisi sebelum diajukan
+function _cekWajib(form: FormDinamis, jawaban: Record<string, string | string[] | Record<string, string>[]>): string | null {
+  for (const f of form.fields) {
+    if (!f.wajib) continue;
+    const val = jawaban[f.id];
+    if (val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) {
+      return `Field wajib "${f.label}" harus diisi sebelum SPJ diajukan.`;
+    }
+  }
+  if (form.blok_berulang) {
+    const entri = jawaban[form.blok_berulang.id];
+    if (!entri || !Array.isArray(entri) || entri.length === 0) {
+      return `Blok berulang "${form.blok_berulang.nama}" minimal harus memiliki satu entri.`;
+    }
+    for (let i = 0; i < entri.length; i++) {
+      const row = entri[i] as Record<string, string>;
+      for (const bf of form.blok_berulang.fields) {
+        if (!bf.wajib) continue;
+        const v = row?.[bf.id];
+        if (v === undefined || v === '') {
+          return `Field wajib "${bf.label}" pada entri ${i + 1} blok "${form.blok_berulang.nama}" harus diisi.`;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 // TA-01 — transisi status TA yang diizinkan (Dokumen 02 / PAKET Langkah 3)
@@ -663,4 +784,278 @@ export const repo = {
       lampiran: data.spj.filter((s) => s.ta_id === ta_id && s.lampiran_nama_asli).length,
     };
   },
+
+  // ===== KUI-01 — Buat/ubah kuitansi (D02 §3, D03 §4 poin 4) =====
+  // Membuat kuitansi baru: hanya PPTK seksi pemilik, TA Aktif Penuh, gatekeeper terbuka.
+  // Simpan snapshot versi alokasi (E-26) dan snapshot penandatangan (F-33d/e).
+  buatKuitansi: (input: {
+    ta_id: string;
+    seksi_ta_id: string;
+    pemetaan_subkegiatan_id: string;
+    rekening_id: string;
+    penerima: string;
+    bruto: number;
+    uraian: string;
+    tanggal_kuitansi: string;
+  }, session: SessionPayload): { ok: boolean; error?: string; kuitansi?: Kuitansi } => {
+    const ta = data.tahunAnggaran.find((t) => t.id === input.ta_id);
+    if (!ta) return { ok: false, error: 'TA tidak ditemukan.' };
+    // B-10c: TA Masa Transisi menolak kuitansi baru
+    if (!repo.canCreateKuitansi(input.ta_id)) return { ok: false, error: `Kuitansi baru hanya dapat dibuat pada TA Aktif Penuh. Status TA saat ini: ${ta.status}.` };
+    // C-17/C-15: gatekeeper harus terbuka
+    const g = gerbangStatus(input.ta_id);
+    if (!g.terbuka) return { ok: false, error: 'Gatekeeper tertutup. Seluruh seksi harus Seimbang dan Bendahara harus menekan Sahkan.' };
+    // PPTK hanya untuk seksinya
+    if (session.active_role !== 'pptk' || session.active_seksi_id !== input.seksi_ta_id) {
+      return { ok: false, error: 'Hanya PPTK seksi pemilik yang dapat membuat kuitansi.' };
+    }
+    // B-10f: hak transaksi pejabat definitif nonaktif selama delegasi Plh./Plt.
+    if (!_isDefinitifAktifForSeksi(session, input.seksi_ta_id)) {
+      return { ok: false, error: 'Hak transaksi pejabat definitif nonaktif selama delegasi Plh./Plt. berlaku.' };
+    }
+    const pem = data.pemetaanSubkegiatanTA.find((p) => p.id === input.pemetaan_subkegiatan_id && p.seksi_ta_id === input.seksi_ta_id);
+    if (!pem) return { ok: false, error: 'Subkegiatan tidak terpetakan untuk seksi ini.' };
+    const alokasi = data.alokasiRekening.find((a) => a.pemetaan_subkegiatan_id === input.pemetaan_subkegiatan_id && a.rekening_id === input.rekening_id && a.disahkan);
+    if (!alokasi) return { ok: false, error: 'Rekening belanja belum dialokasikan atau belum disahkan.' };
+    if (!Number.isInteger(input.bruto) || input.bruto <= 0) return { ok: false, error: 'Nominal bruto harus bilangan bulat rupiah lebih dari nol.' };
+    if (!input.penerima.trim()) return { ok: false, error: 'Nama penerima wajib diisi.' };
+    if (!input.uraian.trim()) return { ok: false, error: 'Uraian pembayaran wajib diisi.' };
+    if (!input.tanggal_kuitansi) return { ok: false, error: 'Tanggal kuitansi wajib diisi.' };
+    // Komitmen tidak boleh melebihi Sisa SPD Bebas
+    const sisa = sisaSpdBebas(alokasi);
+    if (input.bruto > sisa) return { ok: false, error: `Nominal bruto ${formatRupiahLocal(input.bruto)} melebihi Sisa SPD Bebas ${formatRupiahLocal(sisa)}.` };
+    // Snapshot penandatangan dari penugasan aktif (F-33d/e)
+    const snaps = _snapshotPenandatangan(input.ta_id, input.seksi_ta_id);
+    // E-26: snapshot versi alokasi
+    const versiSnap = _versiAlokasiTerbaru(input.ta_id);
+    const id = `kui-${Date.now()}`;
+    const k: Kuitansi = {
+      id, ta_id: input.ta_id, seksi_ta_id: input.seksi_ta_id,
+      pemetaan_subkegiatan_id: input.pemetaan_subkegiatan_id,
+      rekening_id: input.rekening_id,
+      penerima: input.penerima.trim(), bruto: input.bruto, uraian: input.uraian.trim(),
+      tanggal_kuitansi: input.tanggal_kuitansi, status: 'Aktif',
+      pa_kpa_nama: snaps.pa_kpa_nama, pa_kpa_nip: snaps.pa_kpa_nip,
+      bendahara_nama: snaps.bendahara_nama, bendahara_nip: snaps.bendahara_nip,
+      pptk_nama: snaps.pptk_nama, pptk_nip: snaps.pptk_nip,
+      versi_alokasi_snapshot_id: versiSnap,
+    };
+    data.kuitansi.push(k);
+    ta.pernah_transaksi = true;
+    return { ok: true, kuitansi: k };
+  },
+
+  // KUI-01 — Ubah kuitansi Aktif (hanya TA Aktif Penuh)
+  ubahKuitansi: (kuitansi_id: string, perubahan: {
+    penerima?: string; bruto?: number; uraian?: string; tanggal_kuitansi?: string;
+  }, session: SessionPayload): { ok: boolean; error?: string } => {
+    const k = data.kuitansi.find((x) => x.id === kuitansi_id);
+    if (!k) return { ok: false, error: 'Kuitansi tidak ditemukan.' };
+    const ta = data.tahunAnggaran.find((t) => t.id === k.ta_id);
+    if (!ta) return { ok: false, error: 'TA tidak ditemukan.' };
+    // B-10c: Masa Transisi menolak edit
+    if (!repo.canEditKuitansi(k.ta_id)) return { ok: false, error: `Edit kuitansi hanya pada TA Aktif Penuh. Status TA: ${ta.status}.` };
+    // KUI-02: hanya Aktif yang bisa diedit
+    if (k.status !== 'Aktif') return { ok: false, error: 'Kuitansi Terkunci tidak dapat diedit. Lepas SPJ terlebih dahulu.' };
+    if (session.active_role !== 'pptk' || session.active_seksi_id !== k.seksi_ta_id) {
+      return { ok: false, error: 'Hanya PPTK seksi pemilik yang dapat mengubah kuitansi.' };
+    }
+    if (perubahan.bruto !== undefined) {
+      if (!Number.isInteger(perubahan.bruto) || perubahan.bruto <= 0) return { ok: false, error: 'Nominal bruto harus bilangan bulat rupiah lebih dari nol.' };
+      const alokasi = data.alokasiRekening.find((a) => a.pemetaan_subkegiatan_id === k.pemetaan_subkegiatan_id && a.rekening_id === k.rekening_id && a.disahkan);
+      if (!alokasi) return { ok: false, error: 'Alokasi rekening tidak ditemukan.' };
+      // Hitung sisa SPD bebas dikurangi komitmen kuitansi ini sendiri
+      const sisa = sisaSpdBebas(alokasi) + k.bruto; // kuitansi ini sendiri termasuk dalam komitmen
+      if (perubahan.bruto > sisa) return { ok: false, error: `Nominal bruto ${formatRupiahLocal(perubahan.bruto)} melebihi Sisa SPD Bebas ${formatRupiahLocal(sisa - k.bruto + k.bruto)}.` };
+    }
+    if (perubahan.penerima !== undefined && !perubahan.penerima.trim()) return { ok: false, error: 'Nama penerima wajib diisi.' };
+    if (perubahan.uraian !== undefined && !perubahan.uraian.trim()) return { ok: false, error: 'Uraian pembayaran wajib diisi.' };
+    if (perubahan.penerima !== undefined) k.penerima = perubahan.penerima.trim();
+    if (perubahan.bruto !== undefined) k.bruto = perubahan.bruto;
+    if (perubahan.uraian !== undefined) k.uraian = perubahan.uraian.trim();
+    if (perubahan.tanggal_kuitansi !== undefined) k.tanggal_kuitansi = perubahan.tanggal_kuitansi;
+    return { ok: true };
+  },
+
+  // KUI-02 — Batalkan kuitansi Aktif: hapus tanpa jejak (F-33a), lepas komitmen
+  batalkanKuitansi: (kuitansi_id: string, session: SessionPayload): { ok: boolean; error?: string } => {
+    const k = data.kuitansi.find((x) => x.id === kuitansi_id);
+    if (!k) return { ok: false, error: 'Kuitansi tidak ditemukan.' };
+    const ta = data.tahunAnggaran.find((t) => t.id === k.ta_id);
+    if (!ta) return { ok: false, error: 'TA tidak ditemukan.' };
+    // B-10c: Masa Transisi hanya batal, tidak edit
+    if (!repo.canBatalkanKuitansi(k.ta_id)) return { ok: false, error: `Pembatalan tidak diizinkan pada status TA: ${ta.status}.` };
+    if (k.status !== 'Aktif') return { ok: false, error: 'Hanya kuitansi Aktif yang dapat dibatalkan.' };
+    if (session.active_role !== 'pptk' || session.active_seksi_id !== k.seksi_ta_id) {
+      return { ok: false, error: 'Hanya PPTK seksi pemilik yang dapat membatalkan kuitansi.' };
+    }
+    // F-33a: hapus tanpa jejak, termasuk audit terkait
+    purgeAuditForKuitansi(kuitansi_id);
+    removeAll(data.kuitansi, (x) => x.id === kuitansi_id);
+    return { ok: true };
+  },
+
+  // KUI-02 — Kunci kuitansi saat SPJ Draft dibuat
+  _kunciKuitansi: (kuitansi_id: string) => {
+    const k = data.kuitansi.find((x) => x.id === kuitansi_id);
+    if (k) k.status = 'Terkunci';
+  },
+
+  // KUI-02 — Lepas kunci kuitansi saat SPJ Draft dihapus/dilepas
+  _bukaKunciKuitansi: (kuitansi_id: string) => {
+    const k = data.kuitansi.find((x) => x.id === kuitansi_id);
+    if (k && k.status === 'Terkunci') k.status = 'Aktif';
+  },
+
+  kuitansiById: (id: string): Kuitansi | undefined =>
+    data.kuitansi.find((k) => k.id === id),
+
+  // ===== SPJ-01 — Buat SPJ 1:1 & pilih jenis belanja (D02 §5) =====
+  buatSPJ: (input: {
+    ta_id: string;
+    kuitansi_id: string;
+    jenis_belanja: string;
+  }, session: SessionPayload): { ok: boolean; error?: string; spj?: SPJ } => {
+    const ta = data.tahunAnggaran.find((t) => t.id === input.ta_id);
+    if (!ta) return { ok: false, error: 'TA tidak ditemukan.' };
+    if (!repo.canCreateSPJ(input.ta_id)) return { ok: false, error: `SPJ baru hanya pada TA Aktif Penuh. Status: ${ta.status}.` };
+    const k = data.kuitansi.find((x) => x.id === input.kuitansi_id);
+    if (!k) return { ok: false, error: 'Kuitansi tidak ditemukan.' };
+    if (k.ta_id !== input.ta_id) return { ok: false, error: 'Kuitansi tidak tergabung dalam TA ini.' };
+    // F-30: 1:1, tidak boleh ada SPJ untuk kuitansi yang sudah punya SPJ
+    if (data.spj.some((s) => s.kuitansi_id === input.kuitansi_id)) return { ok: false, error: 'Kuitansi ini sudah memiliki SPJ. Satu kuitansi hanya berpasangan dengan satu SPJ.' };
+    if (session.active_role !== 'pptk' || session.active_seksi_id !== k.seksi_ta_id) {
+      return { ok: false, error: 'Hanya PPTK seksi pemilik yang dapat membuat SPJ.' };
+    }
+    if (!input.jenis_belanja.trim()) return { ok: false, error: 'Jenis belanja wajib dipilih.' };
+    // Ambil versi form terbaru untuk jenis belanja ini (I-64: snapshot versi)
+    const form = data.formDinamis
+      .filter((f) => f.jenis_belanja === input.jenis_belanja)
+      .sort((a, b) => Number(b.versi.slice(1)) - Number(a.versi.slice(1)))[0];
+    if (!form) return { ok: false, error: 'Form Dinamis untuk jenis belanja ini belum dibuat.' };
+    const id = `spj-${Date.now()}`;
+    const spj: SPJ = {
+      id, ta_id: input.ta_id, kuitansi_id: input.kuitansi_id,
+      jenis_belanja: input.jenis_belanja, versi_form: form.versi,
+      jawaban: {}, entri_pajak: [],
+      lampiran_nama_asli: null, lampiran_ukuran_asal: null,
+      lampiran_ukuran_final: null, lampiran_status_optimasi: null,
+      catatan_revisi: null, status: 'Draft',
+    };
+    data.spj.push(spj);
+    // Kunci kuitansi (KUI-02 / F-30a)
+    repo._kunciKuitansi(input.kuitansi_id);
+    return { ok: true, spj };
+  },
+
+  // SPJ-04 — Simpan jawaban Form Dinamis SPJ
+  simpanJawabanSPJ: (spj_id: string, jawaban: Record<string, string | string[]>, session: SessionPayload): { ok: boolean; error?: string } => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
+    if (session.active_role !== 'pptk') return { ok: false, error: 'Hanya PPTK yang dapat menyimpan jawaban SPJ.' };
+    const k = data.kuitansi.find((x) => x.id === spj.kuitansi_id);
+    if (!k || session.active_seksi_id !== k.seksi_ta_id) return { ok: false, error: 'SPJ bukan milik seksi ini.' };
+    if (spj.status !== 'Draft') return { ok: false, error: 'SPJ yang sudah Terkunci tidak dapat diubah.' };
+    spj.jawaban = jawaban;
+    return { ok: true };
+  },
+
+  // SPJ-02 — Ajukan SPJ ke Verifikator (kunci SPJ)
+  ajukanSPJ: (spj_id: string, session: SessionPayload): { ok: boolean; error?: string } => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
+    if (session.active_role !== 'pptk') return { ok: false, error: 'Hanya PPTK yang dapat mengajukan SPJ.' };
+    const k = data.kuitansi.find((x) => x.id === spj.kuitansi_id);
+    if (!k || session.active_seksi_id !== k.seksi_ta_id) return { ok: false, error: 'SPJ bukan milik seksi ini.' };
+    if (spj.status !== 'Draft') return { ok: false, error: 'Hanya SPJ Draft yang dapat diajukan.' };
+    // SPJ-04: field wajib harus terisi
+    const form = _getFormByVersion(spj.jenis_belanja, spj.versi_form);
+    if (form) {
+      const errWajib = _cekWajib(form, spj.jawaban);
+      if (errWajib) return { ok: false, error: errWajib };
+    }
+    spj.status = 'Terkunci';
+    recordAudit({ ta_id: spj.ta_id, entitas: `SPJ ${spj.jenis_belanja}`, aksi: 'aksi_administratif', nilai_sesudah: 'SPJ diajukan ke Verifikator', spj_id: spj.id, kuitansi_id: spj.kuitansi_id });
+    return { ok: true };
+  },
+
+  // SPJ-02 — Verifikator kembalikan SPJ ke Draft (buka kunci SPJ, kuitansi tetap Terkunci)
+  kembalikanSPJ: (spj_id: string, catatan: string, session: SessionPayload): { ok: boolean; error?: string } => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
+    if (session.active_role !== 'verifikator') return { ok: false, error: 'Hanya Verifikator yang dapat mengembalikan SPJ.' };
+    if (spj.status !== 'Terkunci') return { ok: false, error: 'Hanya SPJ Terkunci yang dapat dikembalikan.' };
+    if (!catatan.trim()) return { ok: false, error: 'Catatan revisi wajib diisi.' };
+    spj.status = 'Draft';
+    spj.catatan_revisi = catatan.trim();
+    recordAudit({ ta_id: spj.ta_id, entitas: `SPJ ${spj.jenis_belanja}`, aksi: 'verifikasi_kembalikan', nilai_sesudah: `Dikembalikan: ${catatan.trim()}`, spj_id: spj.id, kuitansi_id: spj.kuitansi_id });
+    return { ok: true };
+  },
+
+  // SPJ-02 — Verifikator setujui SPJ -> Menunggu BKU
+  setujuiSPJ: (spj_id: string, session: SessionPayload): { ok: boolean; error?: string } => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
+    if (session.active_role !== 'verifikator') return { ok: false, error: 'Hanya Verifikator yang dapat menyetujui SPJ.' };
+    if (spj.status !== 'Terkunci') return { ok: false, error: 'Hanya SPJ Terkunci yang dapat disetujui.' };
+    spj.status = 'Menunggu BKU';
+    recordAudit({ ta_id: spj.ta_id, entitas: `SPJ ${spj.jenis_belanja}`, aksi: 'verifikasi_setujui', nilai_sesudah: 'SPJ disetujui, Menunggu BKU', spj_id: spj.id, kuitansi_id: spj.kuitansi_id });
+    return { ok: true };
+  },
+
+  // SPJ-03 — Lepas SPJ Draft: kuitansi kembali Aktif, hapus SPJ tanpa jejak
+  lepasSPJ: (spj_id: string, session: SessionPayload): { ok: boolean; error?: string } => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
+    const k = data.kuitansi.find((x) => x.id === spj.kuitansi_id);
+    if (!k) return { ok: false, error: 'Kuitansi terkait tidak ditemukan.' };
+    if (session.active_role !== 'pptk' || session.active_seksi_id !== k.seksi_ta_id) {
+      return { ok: false, error: 'Hanya PPTK seksi pemilik yang dapat melepas SPJ.' };
+    }
+    // Hanya Draft yang bisa dilepas (SPJ-03)
+    if (spj.status !== 'Draft') return { ok: false, error: 'Hanya SPJ Draft yang dapat dilepas. SPJ Terkunci harus dikembalikan Verifikator terlebih dahulu.' };
+    // F-33a: hapus tanpa jejak
+    purgeAuditForSPJ(spj_id);
+    removeAll(data.spj, (s) => s.id === spj_id);
+    // Kuitansi kembali Aktif (F-30c)
+    repo._bukaKunciKuitansi(spj.kuitansi_id);
+    return { ok: true };
+  },
+
+  // SPJ-03 — Batalkan SPJ Draft: sama dengan lepas, hapus tanpa jejak
+  batalkanSPJ: (spj_id: string, session: SessionPayload): { ok: boolean; error?: string } => {
+    return repo.lepasSPJ(spj_id, session);
+  },
+
+  spjById: (id: string): SPJ | undefined =>
+    data.spj.find((s) => s.id === id),
+
+  // ===== BNT-04 — Auto-fill nama dari Direktori Transaksional =====
+  lookupDirektori: (nip_nik: string): DirektoriTransaksionalSPJ | undefined =>
+    data.direktoriTransaksional.find((d) => d.nip_nik === nip_nik.trim()),
+
+  // BNT-04 — Catat/simpan pasangan NIP/NIK + nama ke direktori saat SPJ disimpan/diajukan
+  catatDirektori: (nip_nik: string, nama: string, spj_id: string) => {
+    const key = nip_nik.trim();
+    if (!key || !nama.trim()) return;
+    const existing = data.direktoriTransaksional.find((d) => d.nip_nik === key);
+    if (existing) {
+      if (!existing.referensi_spj_ids.includes(spj_id)) {
+        existing.referensi_spj_ids.push(spj_id);
+      }
+    } else {
+      data.direktoriTransaksional.push({
+        id: `dir-${Date.now()}`,
+        nip_nik: key, nama: nama.trim(), referensi_spj_ids: [spj_id],
+      });
+    }
+  },
+
+  // ===== Helper: Form Dinamis by versi (I-64) =====
+  getFormByVersion: (jenis_belanja: string, versi: string): FormDinamis | undefined =>
+    data.formDinamis.find((f) => f.jenis_belanja === jenis_belanja && f.versi === versi),
+
+  // ===== Jenis belanja tersedia (dari Form Dinamis) =====
+  jenisBelanjaList: (): string[] =>
+    [...new Set(data.formDinamis.map((f) => f.jenis_belanja))],
 };

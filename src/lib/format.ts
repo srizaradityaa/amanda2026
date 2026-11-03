@@ -40,3 +40,46 @@ export function persenNumerik(pembilang: number, penyebut: number): number {
 export function formatKode(kode: string): string {
   return kode;
 }
+
+// ===== Terbilang: konversi bilangan bulat ke teks Indonesia (D02 §2.1) =====
+const SATUAN = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan'];
+const BELASAN = ['sepuluh', 'sebelas', 'dua belas', 'tiga belas', 'empat belas', 'lima belas', 'enam belas', 'tujuh belas', 'delapan belas', 'sembilan belas'];
+
+function konversiGrup(n: number): string {
+  if (n === 0) return '';
+  const ratus = Math.floor(n / 100);
+  const sisa = n % 100;
+  let txt = '';
+  if (ratus === 1) txt += 'seratus';
+  else if (ratus > 1) txt += SATUAN[ratus] + ' ratus';
+  if (sisa > 0) {
+    if (txt) txt += ' ';
+    if (sisa < 10) txt += SATUAN[sisa];
+    else if (sisa < 20) txt += BELASAN[sisa - 10];
+    else txt += SATUAN[Math.floor(sisa / 10)] + ' puluh' + (sisa % 10 > 0 ? ' ' + SATUAN[sisa % 10] : '');
+  }
+  return txt;
+}
+
+export function terbilang(n: number): string {
+  if (n === 0) return 'nol rupiah';
+  if (n < 0) return 'minus ' + terbilang(-n);
+  const triliun = Math.floor(n / 1_000_000_000_000);
+  const sisa1 = n % 1_000_000_000_000;
+  const miliar = Math.floor(sisa1 / 1_000_000_000);
+  const sisa2 = sisa1 % 1_000_000_000;
+  const juta = Math.floor(sisa2 / 1_000_000);
+  const sisa3 = sisa2 % 1_000_000;
+  const ribu = Math.floor(sisa3 / 1_000);
+  const sisa4 = sisa3 % 1_000;
+  const parts: string[] = [];
+  if (triliun > 0) parts.push(konversiGrup(triliun) + ' triliun');
+  if (miliar > 0) parts.push(konversiGrup(miliar) + ' miliar');
+  if (juta > 0) parts.push(konversiGrup(juta) + ' juta');
+  if (ribu > 0) {
+    if (ribu === 1) parts.push('seribu');
+    else parts.push(konversiGrup(ribu) + ' ribu');
+  }
+  if (sisa4 > 0) parts.push(konversiGrup(sisa4));
+  return parts.join(' ').replace(/\s+/g, ' ').trim() + ' rupiah';
+}

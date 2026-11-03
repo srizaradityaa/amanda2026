@@ -18,6 +18,8 @@ import { FormBuilderPage } from '@/components/FormBuilderPage';
 import { TemplateKuitansiPage } from '@/components/TemplateKuitansiPage';
 import { AnggaranBendaharaPage } from '@/components/AnggaranBendaharaPage';
 import { AnggaranPptkPage } from '@/components/AnggaranPptkPage';
+import { KuitansiPage } from '@/components/KuitansiPage';
+import { SPJPage } from '@/components/SPJPage';
 import { GerbangBanner } from '@/components/AnggaranShared';
 import { repo } from '@/data/repo';
 import { DrilldownPage } from '@/components/DrilldownPage';
@@ -137,6 +139,8 @@ function buildNav(role: string): NavItem[] {
     return [
       { id: 'dashboard', label: 'Dasbor', icon: <LayoutDashboard size={18} />, render: () => <PptkDashboard /> },
       { id: 'anggaran', label: 'Anggaran', icon: <Wallet size={18} />, render: () => <AnggaranPptkPage /> },
+      { id: 'kuitansi', label: 'Kuitansi', icon: <FileText size={18} />, render: () => <KuitansiPage /> },
+      { id: 'spj', label: 'SPJ', icon: <ScrollText size={18} />, render: () => <SPJPage /> },
       { id: 'rincian', label: 'Rincian Anggaran', icon: <Layers size={18} />, render: () => <DrilldownPage /> },
       { id: 'audit', label: 'Jejak Audit', icon: <History size={18} />, render: () => <AuditTrail events={visibleAuditEvents()} /> },
     ];

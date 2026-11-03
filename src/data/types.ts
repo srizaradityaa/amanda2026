@@ -333,7 +333,7 @@ export interface SPJ {
   kuitansi_id: string;
   jenis_belanja: string;
   versi_form: string;
-  jawaban: Record<string, string | string[]>;
+  jawaban: Record<string, string | string[] | Record<string, string>[]>;
   entri_pajak: EntriPajakSPJ[];
   lampiran_nama_asli: string | null;
   lampiran_ukuran_asal: number | null;
