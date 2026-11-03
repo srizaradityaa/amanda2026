@@ -143,6 +143,35 @@ function _cekWajib(form: FormDinamis, jawaban: Record<string, string | string[] 
   return null;
 }
 
+// D01 §11 / D03 §10: identitas perjalanan dinas (NIP/NIK + rentang tanggal efektif) dari jawaban SPJ
+type IdentitasJadwal = { nip: string; mulai: string; selesai: string };
+function _identitasJadwal(form: FormDinamis, jawaban: SPJ['jawaban']): IdentitasJadwal[] {
+  const cari = (fields: FieldFormDinamis[], tag: string) => fields.find((f) => f.system_tag === tag);
+  const ambil = (src: Record<string, unknown>, f: FieldFormDinamis | undefined) => (f ? String(src[f.id] ?? '').trim() : '');
+  const mulaiUtama = ambil(jawaban, cari(form.fields, '[SYS_START_DATE]'));
+  const selesaiUtama = ambil(jawaban, cari(form.fields, '[SYS_END_DATE]'));
+  const out: IdentitasJadwal[] = [];
+  const tambah = (nip: string, mulai: string, selesai: string) => {
+    if (nip && mulai) out.push({ nip, mulai, selesai: selesai || mulai });
+  };
+  tambah(ambil(jawaban, cari(form.fields, '[SYS_PERSONNEL_ID]')), mulaiUtama, selesaiUtama);
+  if (form.blok_berulang) {
+    const bf = form.blok_berulang.fields;
+    const rows = jawaban[form.blok_berulang.id];
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (typeof row !== 'object') continue;
+        tambah(
+          ambil(row, cari(bf, '[SYS_PERSONNEL_ID]')),
+          ambil(row, cari(bf, '[SYS_START_DATE]')) || mulaiUtama,
+          ambil(row, cari(bf, '[SYS_END_DATE]')) || selesaiUtama,
+        );
+      }
+    }
+  }
+  return out;
+}
+
 // TA-01 — transisi status TA yang diizinkan (Dokumen 02 / PAKET Langkah 3)
 const TRANSISI_TA: Record<TAStatus, TAStatus[]> = {
   'Draft': ['Aktif Penuh'],
@@ -919,6 +948,7 @@ export const repo = {
     const ta = data.tahunAnggaran.find((t) => t.id === input.ta_id);
     if (!ta) return { ok: false, error: 'TA tidak ditemukan.' };
     if (!repo.canCreateSPJ(input.ta_id)) return { ok: false, error: `SPJ baru hanya pada TA Aktif Penuh. Status: ${ta.status}.` };
+    if (!gerbangStatus(input.ta_id).terbuka) return { ok: false, error: 'Gatekeeper tertutup. SPJ baru belum dapat dibuat.' };
     const k = data.kuitansi.find((x) => x.id === input.kuitansi_id);
     if (!k) return { ok: false, error: 'Kuitansi tidak ditemukan.' };
     if (k.ta_id !== input.ta_id) return { ok: false, error: 'Kuitansi tidak tergabung dalam TA ini.' };
@@ -949,12 +979,13 @@ export const repo = {
   },
 
   // SPJ-04 — Simpan jawaban Form Dinamis SPJ
-  simpanJawabanSPJ: (spj_id: string, jawaban: Record<string, string | string[]>, session: SessionPayload): { ok: boolean; error?: string } => {
+  simpanJawabanSPJ: (spj_id: string, jawaban: Record<string, string | string[] | Record<string, string>[]>, session: SessionPayload): { ok: boolean; error?: string } => {
     const spj = data.spj.find((s) => s.id === spj_id);
     if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
     if (session.active_role !== 'pptk') return { ok: false, error: 'Hanya PPTK yang dapat menyimpan jawaban SPJ.' };
     const k = data.kuitansi.find((x) => x.id === spj.kuitansi_id);
     if (!k || session.active_seksi_id !== k.seksi_ta_id) return { ok: false, error: 'SPJ bukan milik seksi ini.' };
+    if (!repo.canCreateSPJ(k.ta_id)) return { ok: false, error: 'Jawaban SPJ hanya dapat diubah pada TA Aktif Penuh.' };
     if (spj.status !== 'Draft') return { ok: false, error: 'SPJ yang sudah Terkunci tidak dapat diubah.' };
     spj.jawaban = jawaban;
     return { ok: true };
@@ -967,12 +998,26 @@ export const repo = {
     if (session.active_role !== 'pptk') return { ok: false, error: 'Hanya PPTK yang dapat mengajukan SPJ.' };
     const k = data.kuitansi.find((x) => x.id === spj.kuitansi_id);
     if (!k || session.active_seksi_id !== k.seksi_ta_id) return { ok: false, error: 'SPJ bukan milik seksi ini.' };
+    if (!repo.canAksiSPJ(spj.ta_id)) return { ok: false, error: 'Pengajuan SPJ tidak diizinkan pada status TA saat ini.' };
     if (spj.status !== 'Draft') return { ok: false, error: 'Hanya SPJ Draft yang dapat diajukan.' };
     // SPJ-04: field wajib harus terisi
     const form = _getFormByVersion(spj.jenis_belanja, spj.versi_form);
     if (form) {
       const errWajib = _cekWajib(form, spj.jawaban);
       if (errWajib) return { ok: false, error: errWajib };
+    }
+    const milikSaya = form ? _identitasJadwal(form, spj.jawaban) : [];
+    for (const lain of data.spj) {
+      if (lain.id === spj.id || lain.ta_id !== spj.ta_id || lain.status === 'Draft') continue;
+      const formLain = _getFormByVersion(lain.jenis_belanja, lain.versi_form);
+      if (!formLain) continue;
+      for (const a of milikSaya) {
+        for (const b of _identitasJadwal(formLain, lain.jawaban)) {
+          if (a.nip === b.nip && a.mulai <= b.selesai && a.selesai >= b.mulai) {
+            return { ok: false, error: `Bentrok jadwal: NIP/NIK ${a.nip} sudah tercatat pada SPJ lain di TA ini untuk tanggal ${b.mulai} s.d. ${b.selesai}. SPJ tetap Draft.` };
+          }
+        }
+      }
     }
     spj.status = 'Terkunci';
     recordAudit({ ta_id: spj.ta_id, entitas: `SPJ ${spj.jenis_belanja}`, aksi: 'aksi_administratif', nilai_sesudah: 'SPJ diajukan ke Verifikator', spj_id: spj.id, kuitansi_id: spj.kuitansi_id });
@@ -984,6 +1029,7 @@ export const repo = {
     const spj = data.spj.find((s) => s.id === spj_id);
     if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
     if (session.active_role !== 'verifikator') return { ok: false, error: 'Hanya Verifikator yang dapat mengembalikan SPJ.' };
+    if (!repo.canAksiSPJ(spj.ta_id)) return { ok: false, error: 'Pengembalian SPJ tidak diizinkan pada status TA saat ini.' };
     if (spj.status !== 'Terkunci') return { ok: false, error: 'Hanya SPJ Terkunci yang dapat dikembalikan.' };
     if (!catatan.trim()) return { ok: false, error: 'Catatan revisi wajib diisi.' };
     spj.status = 'Draft';
@@ -997,6 +1043,7 @@ export const repo = {
     const spj = data.spj.find((s) => s.id === spj_id);
     if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
     if (session.active_role !== 'verifikator') return { ok: false, error: 'Hanya Verifikator yang dapat menyetujui SPJ.' };
+    if (!repo.canAksiSPJ(spj.ta_id)) return { ok: false, error: 'Persetujuan SPJ tidak diizinkan pada status TA saat ini.' };
     if (spj.status !== 'Terkunci') return { ok: false, error: 'Hanya SPJ Terkunci yang dapat disetujui.' };
     spj.status = 'Menunggu BKU';
     recordAudit({ ta_id: spj.ta_id, entitas: `SPJ ${spj.jenis_belanja}`, aksi: 'verifikasi_setujui', nilai_sesudah: 'SPJ disetujui, Menunggu BKU', spj_id: spj.id, kuitansi_id: spj.kuitansi_id });
@@ -1012,6 +1059,7 @@ export const repo = {
     if (session.active_role !== 'pptk' || session.active_seksi_id !== k.seksi_ta_id) {
       return { ok: false, error: 'Hanya PPTK seksi pemilik yang dapat melepas SPJ.' };
     }
+    if (!repo.canAksiSPJ(spj.ta_id)) return { ok: false, error: 'Pelepasan SPJ tidak diizinkan pada status TA saat ini.' };
     // Hanya Draft yang bisa dilepas (SPJ-03)
     if (spj.status !== 'Draft') return { ok: false, error: 'Hanya SPJ Draft yang dapat dilepas. SPJ Terkunci harus dikembalikan Verifikator terlebih dahulu.' };
     // F-33a: hapus tanpa jejak

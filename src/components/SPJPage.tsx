@@ -5,6 +5,7 @@ import {
   useToast, SearchBox, FilterSelect, EmptyState,
 } from '@/components/ui';
 import { repo } from '@/data/repo';
+import { gerbangStatus } from '@/data/anggaran';
 import { formatRupiah } from '@/lib/format';
 import { formatTanggalPendek, todayWita } from '@/lib/wita';
 import { getSession } from '@/lib/auth';
@@ -66,7 +67,7 @@ function SPJContent({ sesi, ta_id, seksi_id, seksiNama, onChanged }: {
           <span>Kuitansi Aktif tanpa SPJ: <span className="mono tnum">{kuitansiUntukSPJ.length}</span></span>
         </div>
         <div className="mt-4">
-          <Button variant="primary" disabled={kuitansiUntukSPJ.length === 0 || !repo.canCreateSPJ(ta_id)} onClick={() => { setShowCreate(true); setErr(null); }}>
+          <Button variant="primary" disabled={kuitansiUntukSPJ.length === 0 || !repo.canCreateSPJ(ta_id) || !gerbangStatus(ta_id).terbuka} onClick={() => { setShowCreate(true); setErr(null); }}>
             <Plus size={16} /> Buat SPJ
           </Button>
           {kuitansiUntukSPJ.length === 0 && <span className="ml-3 text-2xs text-mist-dim">Tidak ada kuitansi Aktif yang siap dipasangkan SPJ.</span>}
@@ -230,8 +231,8 @@ function EditSPJModal({ sesi, spj, kuitansi, onClose, onSaved }: {
   const form = repo.getFormByVersion(spj.jenis_belanja, spj.versi_form);
 
   // State jawaban: field tunggal + blok berulang
-  const [jawaban, setJawaban] = useState<Record<string, string | string[]>>(() => {
-    const init: Record<string, string | string[]> = {};
+  const [jawaban, setJawaban] = useState<Record<string, string | string[] | Record<string, string>[]>>(() => {
+    const init: Record<string, string | string[] | Record<string, string>[]> = {};
     if (form) {
       for (const f of form.fields) init[f.id] = spj.jawaban[f.id] ?? '';
       if (form.blok_berulang) {
@@ -325,8 +326,8 @@ function EditSPJModal({ sesi, spj, kuitansi, onClose, onSaved }: {
 // ===== SPJ-04 — Form Dinamis editor dengan blok berulang + BNT-04 auto-fill =====
 function FormDinamisEditor({ form, jawaban, setJawaban, isDraft, spjId }: {
   form: FormDinamis;
-  jawaban: Record<string, string | string[]>;
-  setJawaban: (j: Record<string, string | string[]>) => void;
+  jawaban: Record<string, string | string[] | Record<string, string>[]>;
+  setJawaban: (j: Record<string, string | string[] | Record<string, string>[]>) => void;
   isDraft: boolean;
   spjId: string;
 }) {
@@ -345,33 +346,31 @@ function FormDinamisEditor({ form, jawaban, setJawaban, isDraft, spjId }: {
 
   // Blok berulang
   const blok = form.blok_berulang;
-  const blokEntri = blok ? (jawaban[blok.id] as string[] ?? []) : [];
-  // Actually blok entri should be array of Record<string,string>, let me fix
-  const blokRows: Record<string, string>[] = blok ? (Array.isArray(jawaban[blok.id]) ? jawaban[blok.id] as unknown as Record<string, string>[] : [createBlokRow(blok.id, blok.fields)]) : [];
+  const blokRows: Record<string, string>[] = blok ? (Array.isArray(jawaban[blok.id]) ? jawaban[blok.id] as Record<string, string>[] : [createBlokRow(blok.id, blok.fields)]) : [];
 
   const setBlokRow = (idx: number, fieldId: string, val: string) => {
     const newRows = [...blokRows];
     newRows[idx] = { ...newRows[idx], [fieldId]: val };
-    setJawaban({ ...jawaban, [blok!.id]: newRows as unknown as string[] });
+    setJawaban({ ...jawaban, [blok!.id]: newRows });
   };
 
   const handleBlokNipNik = (idx: number, fieldId: string, val: string, partnerFieldId: string) => {
     const dir = repo.lookupDirektori(val);
     const newRows = [...blokRows];
     newRows[idx] = { ...newRows[idx], [fieldId]: val, ...(dir ? { [partnerFieldId]: dir.nama } : {}) };
-    setJawaban({ ...jawaban, [blok!.id]: newRows as unknown as string[] });
+    setJawaban({ ...jawaban, [blok!.id]: newRows });
   };
 
   const tambahBlokEntri = () => {
     if (!blok) return;
     const newRows = [...blokRows, createBlokRow(blok.id, blok.fields)];
-    setJawaban({ ...jawaban, [blok.id]: newRows as unknown as string[] });
+    setJawaban({ ...jawaban, [blok.id]: newRows });
   };
 
   const hapusBlokEntri = (idx: number) => {
     if (!blok || blokRows.length <= 1) return; // min 1 entri
     const newRows = blokRows.filter((_, i) => i !== idx);
-    setJawaban({ ...jawaban, [blok.id]: newRows as unknown as string[] });
+    setJawaban({ ...jawaban, [blok.id]: newRows });
   };
 
   return (
@@ -456,7 +455,7 @@ function FieldDinamis({ field, value, onChange, disabled }: {
 }
 
 // BNT-04: Catat pasangan NIP/NIK + nama dari jawaban ke Direktori Transaksional
-function _catatDirektoriFromJawaban(form: FormDinamis, jawaban: Record<string, string | string[]>, spjId: string) {
+function _catatDirektoriFromJawaban(form: FormDinamis, jawaban: Record<string, string | string[] | Record<string, string>[]>, spjId: string) {
   // Field utama
   const idField = form.fields.find((f) => f.system_tag === '[SYS_PERSONNEL_ID]');
   const nameField = form.fields.find((f) => f.system_tag === '[SYS_PERSONNEL_NAME]');

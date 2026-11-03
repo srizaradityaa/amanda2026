@@ -218,3 +218,69 @@ Skenario uji:
 | I-64g | Terbukti di kode | `buildNav` di `App.tsx`: menu Form Dinamis & Template Kuitansi hanya di `role === 'admin'`. |
 | M-89 | Terbukti di kode | `validasiTagSistem` menolak ID tanpa nama (atau sebaliknya) dalam konteks yang sama. |
 
+## Langkah 5B: Kuitansi & SPJ (Tahap A, frontend dengan data contoh)
+
+Cara mencoba: masuk sebagai PPTK seksi yang memiliki kuitansi contoh (mis. seksi "Seksi Pengadaan" pada TA 2026). Menu **Kuitansi** dan **SPJ** ada di panel PPTK.
+
+Data contoh TA 2026 (Aktif Penuh):
+- kui-1: Aktif, Honorarium kegiatan rapat koordinasi, Rp 5.000.000, belum ada SPJ.
+- kui-2: Terkunci, Pembelian ATK habis pakai triwulan I, SPJ spj-2 berstatus Draft (dapat dilepas).
+- kui-3: Terkunci, Pengadaan kertas fotokopi, SPJ spj-3 Menunggu BKU.
+- kui-4: Terkunci, Jasa konsultan perencanaan, SPJ spj-4 Dibukukan.
+
+Data contoh TA 2024 (Masa Transisi):
+- kui-mt-1: Aktif. Hanya dapat dibatalkan, tidak dapat diedit atau dibuat baru.
+
+Direktori Transaksional SPJ (BNT-04):
+- NIP `198807202012011004` → Budi Santoso, S.T.
+- NIP `3210014503900001` → Nina Marlina
+- NIP `6701234590123456` → Ahmad Narasumber, S.E.
+
+Skenario uji:
+
+46. **Buat kuitansi (KUI-01).** Di menu Kuitansi, tekan "Buat Kuitansi". Pilih subkegiatan dan rekening (hanya yang sudah disahkan), isi bruto, uraian, penerima, dan tanggal. Melebihi Sisa SPD Bebas ditolak dengan pesan nominal. Tidak ada nomor kuitansi yang dibuat. Toast "Tersimpan" muncul.
+47. **Ubah dan batal kuitansi Aktif (KUI-02).** Pada kui-1, tombol ubah dan batal tersedia. Ubah nominal lalu simpan. Batal menghapus kuitansi tanpa jejak (F-33a).
+48. **Kuitansi Terkunci (KUI-02, F-30a).** Kuitansi kui-2, kui-3, dan kui-4 menampilkan ikon gembok dan tidak dapat diubah atau dibatalkan. Untuk membuka kunci, SPJ harus dilepas (kui-2 bisa dilepas).
+49. **Masa Transisi (B-10c).** Masuk ke TA 2024 bila tersedia. Tombol "Buat Kuitansi" nonaktif. Kuitansi kui-mt-1 hanya bisa dibatalkan.
+50. **Cetak F4 (KUI-03, F-27 s.d. F-29).** Tekan ikon cetak pada kuitansi. Header memuat kotak TA, instansi, dan kode subkegiatan serta kode rekening dalam satu baris. Badan memuat terbilang, UNTUK PEMBAYARAN, dan Sub Keg. (nama). Tidak ada No. BKU, Kegiatan, rekening bank, pelaksana, atau kotak verifikasi. Empat blok TTD 2x2 dan blok Penerima dengan tempat dan tanggal.
+51. **Buat SPJ 1:1 (SPJ-01, F-30).** Pilih kuitansi Aktif yang belum punya SPJ dan jenis belanja. Kuitansi langsung Terkunci. Kuitansi yang sudah punya SPJ tidak muncul lagi di pilihan. Tombol "Buat SPJ" nonaktif bila gatekeeper tertutup (C-17b).
+52. **Isi Form Dinamis SPJ (SPJ-04, H-57, I-59 s.d. I-61).** Buka SPJ Draft (mis. spj-2 atau SPJ baru jenis "Belanja Perjalanan Dinas"). Isi field. Blok "Pelaku" minimal satu entri, tambah dengan "+ Tambah". Field wajib kosong menolak pengajuan.
+53. **Auto-fill NIP/NIK (BNT-04, M-90).** Pada blok Pelaku, masukkan NIP `198807202012011004`. Nama terisi otomatis. NIP baru: nama diisi manual, lalu tersimpan ke Direktori saat Simpan Draft atau Ajukan. Penghapusan SPJ tidak menghapus entri direktori.
+54. **Ajukan dan bentrok jadwal (SPJ-02, M-96, D01 §11).** Dua SPJ dalam TA yang sama dengan NIP yang sama dan rentang tanggal beririsan: pengajuan kedua ditolak dengan pesan "Bentrok jadwal" dan SPJ tetap Draft. Draft lain tidak menjadi penghalang.
+55. **Kembalikan dan setujui (SPJ-02, F-31).** Verifikator dapat mengembalikan SPJ Terkunci dengan catatan wajib. SPJ kembali Draft, kuitansi tetap Terkunci. Setujui mengubah SPJ menjadi Menunggu BKU.
+56. **Lepas dan batalkan SPJ Draft (SPJ-03, F-30c).** Tombol lepas dan batal pada SPJ Draft. Kuitansi terkait kembali Aktif tanpa jejak. SPJ Terkunci tidak dapat dilepas.
+57. **Filter daftar (R-145).** Daftar kuitansi memfilter periode, rekening, dan pencarian. Daftar SPJ memfilter status dan jenis belanja.
+
+### Status Langkah 5B (dibangun dan diperiksa lewat kode; belum diuji di browser)
+
+| ID | Status | Keterangan |
+|---|---|---|
+| KUI-01 | Terbukti di kode | `repo.buatKuitansi` dan `ubahKuitansi`: TA Aktif Penuh, gatekeeper, PPTK seksi pemilik, bruto bilangan bulat, Sisa SPD Bebas. `KuitansiPage.tsx` `KuitansiFormModal`. Tidak ada penomoran. |
+| KUI-02 | Terbukti di kode | `_kunciKuitansi` saat SPJ dibuat; `_bukaKunciKuitansi` saat SPJ dilepas. `batalkanKuitansi` hanya Aktif. `simpanJawabanSPJ`, `ajukanSPJ`, `lepasSPJ`, `buatSPJ` memakai izin status TA (`canCreateSPJ` / `canAksiSPJ`). |
+| KUI-03 | Terbukti di kode | `CetakKuitansiModal` (KuitansiPage.tsx). Grep: tidak ada teks BKU, Kegiatan, Bank, Pelaksana, atau Verifikasi pada area cetak. |
+| SPJ-01 | Terbukti di kode | `repo.buatSPJ`: 1:1 (F-30), PPTK pemilik, gatekeeper (C-17b), jenis belanja menentukan form. |
+| SPJ-02 | Terbukti di kode | `ajukanSPJ` (Terkunci, `_cekWajib`, bentrok `_identitasJadwal`), `kembalikanSPJ` (catatan wajib), `setujuiSPJ`. |
+| SPJ-03 | Terbukti di kode | `lepasSPJ` hanya Draft, `purgeAuditForSPJ`, `_bukaKunciKuitansi`. `batalkanSPJ` memanggil `lepasSPJ`. |
+| SPJ-04 | Terbukti di kode | `FormDinamisEditor`: blok berulang, "+ Tambah", hapus entri (min. satu), `_cekWajib`. `getFormByVersion` (I-64). |
+| BNT-04 | Terbukti di kode | `lookupDirektori` saat NIP diketik; `catatDirektori` saat Simpan Draft dan Ajukan; direktori tidak dihapus saat SPJ dilepas. |
+
+### Pengingat dari langkah sebelumnya
+
+| ID | Status | Bukti (kode) |
+|---|---|---|
+| E-26 | Terbukti di kode | `_versiAlokasiTerbaru` dipanggil di `buatKuitansi` (`versi_alokasi_snapshot_id`). |
+| C-17b | Terbukti di kode | `repo.buatSPJ` menolak bila `gerbangStatus` tertutup. |
+| C-15, C-15b, C-17 | Terbukti di kode (gerbang) | `repo.buatKuitansi` memanggil `gerbangStatus`; UI menonaktifkan tombol. Tidak diuji skenario pergantian seksi. |
+| B-6 | Terbukti di kode | `hapusTA` menolak TA dengan `pernah_transaksi` true. Flag tetap true walau kuitansi dibatalkan. |
+| B-10c | Terbukti di kode | `canCreateKuitansi`, `canEditKuitansi`, `canBatalkanKuitansi`, `canCreateSPJ`, `canAksiSPJ`; dipakai di kuitansi dan SPJ. |
+| B-10f | Terbukti di kode | `_isDefinitifAktifForSeksi` dipanggil di `buatKuitansi`. |
+| F-33a | Terbukti di kode | `batalkanKuitansi` dan `lepasSPJ` memanggil `purgeAuditForKuitansi` / `purgeAuditForSPJ`. |
+| F-33d/e | Terbukti di kode | `_snapshotPenandatangan` dipanggil di `buatKuitansi`. |
+| R-145 | Terbukti di kode | `filterPeriode`, `filterRekening` di `KuitansiPage.tsx`; `filterStatus`, `filterJenis` di `SPJPage.tsx`. |
+| I-64 | Terbukti di kode | `EditSPJModal` memakai `getFormByVersion(spj.jenis_belanja, spj.versi_form)`. |
+
+### Catatan
+
+- Aturan Masa Transisi untuk SPJ Draft (edit isi, lepas, batal) belum tertulis eksplisit di dokumen. Diterapkan: isi SPJ hanya diubah pada Aktif Penuh; lepas dan pengajuan mengikuti izin aksi SPJ (Aktif Penuh atau Masa Transisi).
+- Belum diuji di peramban. Skenario 46 s.d. 57 perlu dijalankan manual.
+
