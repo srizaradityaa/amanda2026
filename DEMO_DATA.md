@@ -267,6 +267,34 @@ Skenario uji:
 | SPJ-04 | Terbukti di kode | `FormDinamisEditor`: blok berulang, "+ Tambah", hapus entri (min. satu), `_cekWajib`. `getFormByVersion` (I-64). |
 | BNT-04 | Terbukti di kode | `lookupDirektori` saat NIP diketik; `catatDirektori` saat Simpan Draft dan Ajukan; direktori tidak dihapus saat SPJ dilepas. |
 
+## Langkah 5C1: Pajak SPJ (Tahap A, frontend dengan data contoh)
+
+Cara mencoba: masuk sebagai PPTK seksi pemilik, buka SPJ Draft (mis. spj-2 dengan kui-2). spj-3 dan spj-4 sudah Terkunci atau Dibukukan dan tidak dapat diubah pajaknya.
+
+| ID | Status | Bukti (kode) |
+|---|---|---|
+| PJK-01 | Terbukti di kode | `repo.simpanEntriPajakSPJ` (`repo.ts`); pop-up `PajakSPJModal.tsx`; dibuka dari `EditSPJModal` (`SPJPage.tsx`) setelah Simpan Draft dan lewat tombol "Kelola Pajak" pada tab Detail untuk SPJ Draft. |
+| PJK-02 | Terbukti di kode | `repo.simpanEntriPajakSPJ` menolak bila Total Pajak > bruto kuitansi; `repo.ringkasanPajakSPJ` menghitung Total Pajak dan Jumlah dibayarkan; ditampilkan di pop-up dan tab Detail. |
+
+Skenario Dokumen 05 (K-71 s.d. K-74b):
+
+| ID | Status | Keterangan |
+|---|---|---|
+| K-71 | Terbukti di kode | Nominal diisi manual. Tidak ada perhitungan tarif. Satu-satunya perhitungan: Total Pajak dan Jumlah dibayarkan. Bruto kuitansi tidak berubah. |
+| K-72 | Terbukti di kode | Pop-up muncul setelah Simpan Draft. Tombol "Tambah Entri Pajak" dan hapus per entri. |
+| K-73 | Terbukti di kode | Pilihan jenis pajak hanya Master Jenis Pajak berstatus Aktif. Server menolak jenis nonaktif atau tidak ada (`simpanEntriPajakSPJ`). |
+| K-74 | Terbukti di kode | Entri disimpan pada SPJ. Bruto kuitansi dan komitmen tidak diubah. SPJ tanpa entri pajak tetap bisa diterima. |
+| K-74a | Terbukti di kode | Penolakan di `repo.simpanEntriPajakSPJ` bila Total Pajak > bruto. Pesan memuat bruto, Total Pajak, dan batas. Entri tidak tersimpan. Belum diuji di peramban. |
+| K-74b | Terbukti di kode | Total Pajak sama dengan bruto diterima; Jumlah dibayarkan nol. Jumlah dibayarkan = bruto dikurangi Total Pajak. |
+
+Tafsiran (belum diatur dokumen secara eksplisit):
+- "Simpan Pajak" mengganti seluruh daftar entri pajak SPJ, bukan menambah.
+- Nominal entri harus bilangan bulat lebih dari nol.
+- Ajukan ke Verifikator tidak membuka pop-up pajak. Pajak yang sudah tersimpan tetap ikut.
+- Data contoh spj-4 (Dibukukan) memakai pjk-23 yang tidak ada di master; diganti ke pjk-2 agar total tetap Rp 2.250.000 dan tidak melebihi bruto Rp 15.000.000.
+
+Belum diuji di peramban. Skenario 58 s.d. 61 perlu dijalankan manual: buka SPJ Draft, simpan draft, isi entri pajak dengan total melebihi bruto kuitansi (harus ditolak dengan pesan bruto dan batas), lalu isi total tepat sama dengan bruto (diterima, Jumlah dibayarkan nol).
+
 ### Pengingat dari langkah sebelumnya
 
 | ID | Status | Bukti (kode) |

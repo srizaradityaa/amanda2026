@@ -1008,6 +1008,37 @@ export const repo = {
     return { ok: true };
   },
 
+  // PJK-01 — Simpan entri pajak SPJ (pengganti seluruh daftar), hanya SPJ Draft milik seksi
+  simpanEntriPajakSPJ: (spj_id: string, entri: { jenis_pajak_id: string; nominal: number }[], session: SessionPayload): { ok: boolean; error?: string } => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    if (!spj) return { ok: false, error: 'SPJ tidak ditemukan.' };
+    if (session.active_role !== 'pptk') return { ok: false, error: 'Hanya PPTK yang dapat menyimpan pajak SPJ.' };
+    const k = data.kuitansi.find((x) => x.id === spj.kuitansi_id);
+    if (!k || session.active_seksi_id !== k.seksi_ta_id) return { ok: false, error: 'SPJ bukan milik seksi ini.' };
+    if (!repo.canCreateSPJ(k.ta_id)) return { ok: false, error: 'Pajak SPJ hanya dapat diubah pada TA Aktif Penuh.' };
+    if (spj.status !== 'Draft') return { ok: false, error: 'SPJ yang sudah Terkunci tidak dapat diubah.' };
+    for (const e of entri) {
+      const jenis = data.masterJenisPajak.find((j) => j.id === e.jenis_pajak_id);
+      if (!jenis || jenis.status !== 'Aktif') return { ok: false, error: 'Jenis pajak harus dipilih dari Master Jenis Pajak yang aktif.' };
+      if (!Number.isInteger(e.nominal) || e.nominal <= 0) return { ok: false, error: 'Nominal pajak harus bilangan bulat rupiah lebih dari nol.' };
+    }
+    const total = entri.reduce((s, e) => s + e.nominal, 0);
+    if (total > k.bruto) {
+      return { ok: false, error: `Total Pajak ${formatRupiahLocal(total)} melebihi bruto kuitansi ${formatRupiahLocal(k.bruto)}. Batas Total Pajak adalah bruto kuitansi ${formatRupiahLocal(k.bruto)}; entri tidak tersimpan.` };
+    }
+    spj.entri_pajak = entri.map((e, i) => ({ id: `ep-${Date.now()}-${i}`, jenis_pajak_id: e.jenis_pajak_id, nominal: e.nominal }));
+    return { ok: true };
+  },
+
+  // PJK-02 — Total Pajak dan Jumlah dibayarkan (bruto dikurangi Total Pajak)
+  ringkasanPajakSPJ: (spj_id: string): { bruto: number; total: number; dibayarkan: number } | undefined => {
+    const spj = data.spj.find((s) => s.id === spj_id);
+    const k = spj && data.kuitansi.find((x) => x.id === spj.kuitansi_id);
+    if (!spj || !k) return undefined;
+    const total = spj.entri_pajak.reduce((s, e) => s + e.nominal, 0);
+    return { bruto: k.bruto, total, dibayarkan: k.bruto - total };
+  },
+
   // SPJ-02 — Ajukan SPJ ke Verifikator (kunci SPJ)
   ajukanSPJ: (spj_id: string, session: SessionPayload): { ok: boolean; error?: string } => {
     const spj = data.spj.find((s) => s.id === spj_id);

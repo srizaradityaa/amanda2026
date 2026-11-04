@@ -10,8 +10,9 @@ import { formatRupiah } from '@/lib/format';
 import { formatTanggalPendek, todayWita } from '@/lib/wita';
 import { getSession } from '@/lib/auth';
 import { aktorSesi, ErrorLine, Panel, SectionTitle } from '@/components/AnggaranShared';
+import { PajakSPJModal } from '@/components/PajakSPJModal';
 import type { SPJ, Kuitansi, SessionPayload, FormDinamis, FieldFormDinamis } from '@/data/types';
-import { FileText, ScrollText, Plus, Trash2, Send, Unlock, Lock, Eye, Pencil, XCircle } from 'lucide-react';
+import { FileText, ScrollText, Plus, Trash2, Send, Clock as Unlock, Lock, Eye, Pencil, Circle as XCircle } from 'lucide-react';
 
 export function SPJPage() {
   const sesi = getSession();
@@ -227,6 +228,7 @@ function EditSPJModal({ sesi, spj, kuitansi, onClose, onSaved }: {
   const { notify } = useToast();
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'form' | 'detail'>('form');
+  const [showPajak, setShowPajak] = useState(false);
   const isDraft = spj.status === 'Draft';
   const form = repo.getFormByVersion(spj.jenis_belanja, spj.versi_form);
 
@@ -251,8 +253,8 @@ function EditSPJModal({ sesi, spj, kuitansi, onClose, onSaved }: {
     }
     const r = repo.simpanJawabanSPJ(spj.id, jawaban, sesi);
     if (!r.ok) { setErr(r.error ?? 'Gagal'); return; }
-    notify('Tersimpan');
     onSaved();
+    setShowPajak(true);
   };
 
   const ajukan = () => {
@@ -277,6 +279,7 @@ function EditSPJModal({ sesi, spj, kuitansi, onClose, onSaved }: {
   };
 
   return (
+    <>
     <Modal open={true} onClose={onClose} title={`SPJ — ${spj.jenis_belanja} (${spj.versi_form})`} wider
       footer={
         <div className="flex items-center justify-between">
@@ -315,11 +318,17 @@ function EditSPJModal({ sesi, spj, kuitansi, onClose, onSaved }: {
           <div>Jenis Belanja: <span className="text-mist">{spj.jenis_belanja}</span></div>
           <div>Versi Form: <span className="text-mist mono">{spj.versi_form}</span></div>
           <div>Status: <span className="text-mist">{spj.status}</span></div>
-          <div>Total Pajak: <span className="text-mist mono tnum">{formatRupiah(spj.entri_pajak.reduce((s, e) => s + e.nominal, 0))}</span></div>
+          <div>Total Pajak: <span className="text-mist mono tnum">{formatRupiah(repo.ringkasanPajakSPJ(spj.id)?.total ?? 0)}</span></div>
+          <div>Jumlah dibayarkan: <span className="text-mist mono tnum">{formatRupiah(repo.ringkasanPajakSPJ(spj.id)?.dibayarkan ?? 0)}</span></div>
           <div>Lampiran: <span className="text-mist">{spj.lampiran_nama_asli ?? 'belum ada'}</span></div>
+          {isDraft && <Button variant="secondary" onClick={() => setShowPajak(true)}>Kelola Pajak</Button>}
         </div>
       )}
     </Modal>
+    {showPajak && (
+      <PajakSPJModal sesi={sesi} spj={spj} onClose={() => setShowPajak(false)} onSaved={() => setShowPajak(false)} />
+    )}
+    </>
   );
 }
 
